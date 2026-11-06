@@ -1,0 +1,53 @@
+# Local development: the databases and Gotenberg (HTML to PDF). Run the API with `npm run start:dev`.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hrms_postgres_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hrms_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d hrms_db']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: hrms_redis_dev
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_dev_data:/data
+
+  gotenberg:
+    image: gotenberg/gotenberg:8.38.1-chromium
+    container_name: hrms_gotenberg_dev
+    restart: unless-stopped
+    # The offer letter HTML is user-edited: no JavaScript, no network, no files but its own
+    # request files in /tmp, no downloadFrom or webhooks
+    command:
+      - gotenberg
+      - --chromium-disable-javascript=true
+      - --chromium-allow-list=^file:///tmp/.*
+      - --chromium-deny-list=^(?!file:///tmp/).*
+      - --chromium-deny-private-ips=true
+      - --chromium-deny-public-ips=true
+      - --api-disable-download-from=true
+      - --webhook-disable=true
+      - --api-timeout=30s
+    # Published on localhost only, for the API running on the host (GOTENBERG_URL=http://localhost:3100)
+    ports:
+      - '127.0.0.1:3100:3000'
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:

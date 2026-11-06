@@ -1,0 +1,77 @@
+# Full stack: API + PostgreSQL + Redis + Gotenberg (HTML to PDF)
+services:
+  app:
+    build: .
+    container_name: hrms_app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hrms_db
+      REDIS_HOST: redis
+      GOTENBERG_URL: http://gotenberg:3000
+    ports:
+      - '3000:3000'
+    networks:
+      - default
+      - pdf
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      gotenberg:
+        condition: service_started
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: hrms_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hrms_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d hrms_db']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: hrms_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+  gotenberg:
+    image: gotenberg/gotenberg:8.38.1-chromium
+    container_name: hrms_gotenberg
+    restart: unless-stopped
+    # The offer letter HTML is user-edited: no JavaScript, no network, no files but its own
+    # request files in /tmp, no downloadFrom or webhooks
+    command:
+      - gotenberg
+      - --chromium-disable-javascript=true
+      - --chromium-allow-list=^file:///tmp/.*
+      - --chromium-deny-list=^(?!file:///tmp/).*
+      - --chromium-deny-private-ips=true
+      - --chromium-deny-public-ips=true
+      - --api-disable-download-from=true
+      - --webhook-disable=true
+      - --api-timeout=30s
+    # Only on the internal network: reachable by the app, no published port, no internet
+    networks:
+      - pdf
+
+networks:
+  # internal: containers on it cannot reach outside the Docker host
+  pdf:
+    internal: true
+
+volumes:
+  postgres_data:
+  redis_data:
